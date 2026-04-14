@@ -117,6 +117,17 @@ def load_model_routing() -> dict:
 
 # ─── Core ────────────────────────────────────────────────────────────────────
 
+def get_safe_env() -> dict:
+    """サブプロセスに渡す安全な環境変数の辞書を構築する"""
+    allowed_vars = {
+        "PATH", "HOME", "USER", "USERPROFILE",
+        "LANG", "LC_ALL", "LC_CTYPE",
+        "GEMINI_API_KEY", "ANTHROPIC_API_KEY", "CLAUDE_API_KEY",
+        "NVM_DIR"
+    }
+    return {k: v for k, v in os.environ.items() if k in allowed_vars}
+
+
 def inject_pcc(prompt: str, preset: str) -> str:
     """PCC 制約プロトコルを prompt に注入する"""
     config = PCC_PRESETS.get(preset)
@@ -138,7 +149,7 @@ Constraints:
 
 def run_gemini(enriched_prompt: str, model: str, timeout: int = 120) -> dict:
     """Gemini CLI headless で実行し結果を返す"""
-    env = os.environ.copy()
+    env = get_safe_env()
     nvm_dir = os.path.expanduser("~/.nvm")
     node_path = os.popen(
         f'bash -c "source {nvm_dir}/nvm.sh && nvm which node 2>/dev/null"'
@@ -177,13 +188,14 @@ def run_gemini(enriched_prompt: str, model: str, timeout: int = 120) -> dict:
 
 def run_claude(enriched_prompt: str, model: str, timeout: int = 120) -> dict:
     """Claude Code CLI (claude -p) で実行し結果を返す"""
+    env = get_safe_env()
     claude_bin = "claude"
 
     t0 = time.monotonic()
     try:
         result = subprocess.run(
             [claude_bin, '-p', '--model', model, enriched_prompt],
-            capture_output=True, text=True, timeout=timeout,
+            capture_output=True, text=True, env=env, timeout=timeout,
             cwd=os.path.expanduser("~"),
         )
         elapsed = time.monotonic() - t0
