@@ -297,6 +297,10 @@ Examples:
                         help="実行ランタイム (gemini/claude、デフォルト: gemini)")
     parser.add_argument("--audit-only", action="store_true",
                         help="stdin のテキストを監査するだけ（LLM 呼び出しなし）")
+    parser.add_argument("--dry-run", action="store_true",
+                        help="LLMを呼び出さずにプロンプトや環境変数の状況を標準出力に出力して終了する")
+    parser.add_argument("--verbose", action="store_true",
+                        help="--dry-run と同様の動作")
 
     args = parser.parse_args()
 
@@ -333,6 +337,16 @@ Examples:
 
     # PCC 注入
     enriched = inject_pcc(prompt, args.preset)
+
+    if args.dry_run or args.verbose:
+        print(f"[PCC] Preset: #{args.preset} → {PCC_PRESETS[args.preset]['label']}")
+        print(f"[Runtime] {args.runtime}")
+        print(f"[Model] {model}")
+        print(f"[Prompt] {len(enriched)} chars")
+        print("─" * 50)
+        print(enriched)
+        print("─" * 50)
+        sys.exit(0)
 
     if not args.json:
         print(f"[PCC] Preset: #{args.preset} → {PCC_PRESETS[args.preset]['label']}")
