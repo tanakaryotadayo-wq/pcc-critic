@@ -15,6 +15,7 @@ PCC Presets:
   監 (#監) — 監査特化。diff/test/evidence ベースの判定
 """
 import argparse
+import functools
 import json
 import os
 import pathlib
@@ -117,6 +118,18 @@ def load_model_routing() -> dict:
 
 # ─── Core ────────────────────────────────────────────────────────────────────
 
+@functools.lru_cache(maxsize=1)
+def _get_nvm_node_path() -> str:
+    """NVM のパス解決を初回のみ実行してキャッシュする"""
+    nvm_dir = os.path.expanduser("~/.nvm")
+    if not os.path.exists(nvm_dir):
+        return ""
+
+    return os.popen(
+        f'bash -c "source {nvm_dir}/nvm.sh && nvm which node 2>/dev/null"'
+    ).read().strip()
+
+
 def inject_pcc(prompt: str, preset: str) -> str:
     """PCC 制約プロトコルを prompt に注入する"""
     config = PCC_PRESETS.get(preset)
@@ -139,10 +152,7 @@ Constraints:
 def run_gemini(enriched_prompt: str, model: str, timeout: int = 120) -> dict:
     """Gemini CLI headless で実行し結果を返す"""
     env = os.environ.copy()
-    nvm_dir = os.path.expanduser("~/.nvm")
-    node_path = os.popen(
-        f'bash -c "source {nvm_dir}/nvm.sh && nvm which node 2>/dev/null"'
-    ).read().strip()
+    node_path = _get_nvm_node_path()
     if node_path:
         env['PATH'] = f"{os.path.dirname(node_path)}:{env.get('PATH', '')}"
 
