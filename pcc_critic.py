@@ -17,6 +17,7 @@ PCC Presets:
 import argparse
 import json
 import os
+import pathlib
 import subprocess
 import sys
 import time
@@ -93,7 +94,26 @@ MODEL_ROUTING = {
     "fast":   "gemini-2.5-flash",
     "standard": "gemini-2.5-pro",
     "deep":   "gemini-3.1-pro-preview",
+    "claude-sonnet": "claude-sonnet-4-6",
+    "claude-opus":   "claude-opus-4-6",
 }
+
+
+def load_model_routing() -> dict:
+    """~/.pcc-critic.json から MODEL_ROUTING を上書きロードする"""
+    config_path = pathlib.Path.home() / ".pcc-critic.json"
+    if not config_path.exists():
+        return dict(MODEL_ROUTING)
+    try:
+        with open(config_path, "r", encoding="utf-8") as f:
+            user_config = json.load(f)
+        if isinstance(user_config.get("model_routing"), dict):
+            merged = dict(MODEL_ROUTING)
+            merged.update(user_config["model_routing"])
+            return merged
+    except (json.JSONDecodeError, OSError) as e:
+        print(f"[PCC] Warning: ~/.pcc-critic.json の読み込みに失敗: {e}", file=sys.stderr)
+    return dict(MODEL_ROUTING)
 
 # ─── Core ────────────────────────────────────────────────────────────────────
 
@@ -155,6 +175,42 @@ def run_gemini(enriched_prompt: str, model: str, timeout: int = 120) -> dict:
         }
 
 
+def run_claude(enriched_prompt: str, model: str, timeout: int = 120) -> dict:
+    """Claude Code CLI (claude -p) で実行し結果を返す"""
+    claude_bin = "claude"
+
+    t0 = time.monotonic()
+    try:
+        result = subprocess.run(
+            [claude_bin, '-p', '--model', model, enriched_prompt],
+            capture_output=True, text=True, timeout=timeout,
+            cwd=os.path.expanduser("~"),
+        )
+        elapsed = time.monotonic() - t0
+        return {
+            "text": result.stdout.strip() or result.stderr.strip(),
+            "exit_code": result.returncode,
+            "elapsed": round(elapsed, 1),
+            "model": model,
+        }
+    except subprocess.TimeoutExpired:
+        return {
+            "text": "",
+            "exit_code": -1,
+            "elapsed": timeout,
+            "model": model,
+            "error": "TIMEOUT",
+        }
+    except FileNotFoundError:
+        return {
+            "text": "Error: claude CLI not found. Install Claude Code first.",
+            "exit_code": -1,
+            "elapsed": 0,
+            "model": model,
+            "error": "NOT_FOUND",
+        }
+
+
 def audit_response(text: str) -> dict:
     """応答の品質を監査する"""
     if not text or len(text.strip()) < 20:
@@ -200,6 +256,12 @@ def audit_response(text: str) -> dict:
 
 
 def main():
+    # UTF-8 互換性: LANG=C 環境でも安全に日本語出力
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8")
+    if hasattr(sys.stderr, "reconfigure"):
+        sys.stderr.reconfigure(encoding="utf-8")
+
     parser = argparse.ArgumentParser(
         description="PCC Critic — PCC 制約注入で AI の本気を引き出す",
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -229,15 +291,23 @@ Examples:
                         help="モデル名 or ショートカット (fast/standard/deep)")
     parser.add_argument("--timeout", "-t", type=int, default=120, help="タイムアウト秒")
     parser.add_argument("--json", "-j", action="store_true", help="JSON 出力")
+    parser.add_argument("--max-input-chars", type=int, default=100000,
+                        help="パイプ入力の最大文字数（デフォルト: 100000）")
+    parser.add_argument("--runtime", choices=["gemini", "claude"], default="gemini",
+                        help="実行ランタイム (gemini/claude、デフォルト: gemini)")
     parser.add_argument("--audit-only", action="store_true",
-                        help="stdin のテキストを監査するだけ（Gemini 呼び出しなし）")
+                        help="stdin のテキストを監査するだけ（LLM 呼び出しなし）")
 
     args = parser.parse_args()
 
-    # stdin からの入力を取得
+    # stdin からの入力を取得（サイズ制限付き）
     stdin_text = ""
     if not sys.stdin.isatty():
         stdin_text = sys.stdin.read().strip()
+        if len(stdin_text) > args.max_input_chars:
+            print(f"[PCC] Warning: 入力が {len(stdin_text)} 文字あり、"
+                  f"{args.max_input_chars} 文字に切り詰めます", file=sys.stderr)
+            stdin_text = stdin_text[:args.max_input_chars]
 
     if args.audit_only:
         text = stdin_text or (args.prompt or "")
@@ -257,20 +327,25 @@ Examples:
     if not prompt:
         parser.error("プロンプトを指定するか、stdin からパイプしてください")
 
-    # モデル解決
-    model = MODEL_ROUTING.get(args.model, args.model)
+    # モデル解決（設定ファイル対応）
+    routing = load_model_routing()
+    model = routing.get(args.model, args.model)
 
     # PCC 注入
     enriched = inject_pcc(prompt, args.preset)
 
     if not args.json:
         print(f"[PCC] Preset: #{args.preset} → {PCC_PRESETS[args.preset]['label']}")
+        print(f"[Runtime] {args.runtime}")
         print(f"[Model] {model}")
         print(f"[Prompt] {len(enriched)} chars")
         print("─" * 50)
 
-    # Gemini 実行
-    result = run_gemini(enriched, model, args.timeout)
+    # LLM 実行
+    if args.runtime == "claude":
+        result = run_claude(enriched, model, args.timeout)
+    else:
+        result = run_gemini(enriched, model, args.timeout)
 
     # Audit
     audit = audit_response(result["text"])
