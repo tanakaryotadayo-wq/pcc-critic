@@ -111,7 +111,11 @@ def load_model_routing() -> dict:
             merged = dict(MODEL_ROUTING)
             merged.update(user_config["model_routing"])
             return merged
-    except (json.JSONDecodeError, OSError) as e:
+    except json.JSONDecodeError as e:
+        print(f"[PCC] Error: ~/.pcc-critic.json のJSONパースに失敗しました: {e}", file=sys.stderr)
+        print("設定ファイルの書式を修正してから再実行してください。", file=sys.stderr)
+        sys.exit(1)
+    except OSError as e:
         print(f"[PCC] Warning: ~/.pcc-critic.json の読み込みに失敗: {e}", file=sys.stderr)
     return dict(MODEL_ROUTING)
 
