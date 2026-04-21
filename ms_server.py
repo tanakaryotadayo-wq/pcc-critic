@@ -701,7 +701,7 @@ class AntigravityTools:
 # === HTTP API ===
 
 
-def create_http_app(tools: AntigravityTools) -> web.Application:
+def create_http_app(tools: AntigravityTools) -> 'web.Application':
     """HTTP APIアプリケーションを作成"""
     
     async def health_handler(request):
@@ -912,7 +912,7 @@ def create_mcp_server(tools: AntigravityTools):
     server = Server("antigravity")
     
     @server.list_tools()
-    async def list_tools() -> List[Tool]:
+    async def list_tools() -> List['Tool']:
         return [
             Tool(name="eck_read", description="ECK/KI履歴読み込み", inputSchema={
                 "type": "object",
@@ -1044,7 +1044,7 @@ def create_mcp_server(tools: AntigravityTools):
         ]
     
     @server.call_tool()
-    async def call_tool(name: str, arguments: dict) -> List[TextContent]:
+    async def call_tool(name: str, arguments: dict) -> List['TextContent']:
         try:
             handler = getattr(tools, name, None)
             if handler:
@@ -1057,7 +1057,7 @@ def create_mcp_server(tools: AntigravityTools):
             return [TextContent(type="text", text=json.dumps({"error": str(e)}))]
     
     @server.list_resources()
-    async def list_resources() -> List[Resource]:
+    async def list_resources() -> List['Resource']:
         return [
             Resource(
                 uri="antigravity://status",
@@ -1086,7 +1086,7 @@ def create_mcp_server(tools: AntigravityTools):
         ]
 
     @server.read_resource()
-    async def read_resource(uri: str) -> ReadResourceResult:
+    async def read_resource(uri: str) -> 'ReadResourceResult':
         import json
         
         if uri == "antigravity://status":
