@@ -2,7 +2,6 @@
 """
 pcc-critic — True 9-Axis PCC-Vortex Critic Integration
 """
-from __future__ import annotations
 import argparse
 import json
 import os
