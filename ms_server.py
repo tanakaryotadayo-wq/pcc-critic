@@ -156,11 +156,28 @@ class AntigravityTools:
     def __init__(self, config: Dict):
         self.config = config
         logger.info(f"AntigravityTools initialized with config: {list(config.keys())}")
+
+    def _safe_resolve_path(self, base_path: Path, user_path: str) -> Path:
+        """ユーザー指定のパスを安全に解決し、ベースディレクトリ内に制限する"""
+        base_resolved = base_path.resolve()
+        # Resolve to absolute path, handling both relative and absolute user inputs
+        # Note: if user_path is absolute, (base_resolved / user_path) becomes user_path
+        target = (base_resolved / user_path).resolve()
+
+        # Ensure the resolved path is within the base directory
+        try:
+            target.relative_to(base_resolved)
+        except ValueError:
+            raise ValueError(f"Access denied: {user_path} is outside the allowed directory")
+        return target
     
     async def eck_read(self, path: str = "", limit: int = 10) -> Dict:
         """ECK/KI履歴を読み込む"""
         base = Path(self.config["eck_base_path"])
-        target = base / path if path else base
+        try:
+            target = self._safe_resolve_path(base, path) if path else base
+        except ValueError as e:
+            return {"error": str(e)}
         
         if not target.exists():
             return {"error": f"Path not found: {target}"}
@@ -181,7 +198,11 @@ class AntigravityTools:
     async def eck_write(self, path: str, content: str, append: bool = True) -> Dict:
         """ECKに追記する"""
         base = Path(self.config["eck_base_path"])
-        target = base / path
+        try:
+            target = self._safe_resolve_path(base, path)
+        except ValueError as e:
+            return {"error": str(e)}
+
         target.parent.mkdir(parents=True, exist_ok=True)
         
         timestamp = datetime.now().isoformat()
@@ -701,7 +722,7 @@ class AntigravityTools:
 # === HTTP API ===
 
 
-def create_http_app(tools: AntigravityTools) -> web.Application:
+def create_http_app(tools: AntigravityTools) -> "web.Application":
     """HTTP APIアプリケーションを作成"""
     
     async def health_handler(request):
